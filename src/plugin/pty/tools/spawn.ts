@@ -25,10 +25,10 @@ export const ptySpawn = tool({
       ),
   },
   async execute(args, ctx) {
-    await checkCommandPermission(args.command, args.args ?? [])
+    await checkCommandPermission(args.command, args.args ?? [], ctx)
 
     if (args.workdir) {
-      await checkWorkdirPermission(args.workdir)
+      await checkWorkdirPermission(args.workdir, ctx)
     }
 
     const sessionId = ctx.sessionID

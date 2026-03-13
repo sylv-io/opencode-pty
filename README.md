@@ -243,11 +243,11 @@ This plugin respects OpenCode's [permission settings](https://opencode.ai/docs/p
 }
 ```
 
-> [!IMPORTANT]
-> **Limitations compared to built-in bash tool:**
+> [!NOTE]
+> **Permission behavior:**
 >
-> - **"ask" permissions are treated as "deny"**: Since plugins cannot trigger OpenCode's permission prompt UI, commands matching an "ask" pattern will be denied. A toast notification will inform you when this happens. Configure explicit "allow" or "deny" for commands you want to use with PTY.
-> - **"external_directory" with "ask" is treated as "allow"**: When the working directory is outside the project and `permission.external_directory` is set to "ask", this plugin allows it (with a log message). Set to "deny" explicitly if you want to block external directories.
+> - **"ask" permissions trigger an interactive prompt**: Commands matching an "ask" pattern show the same TUI approval dialog as the built-in bash tool. You can approve once, always (for the session), or reject.
+> - **"external_directory" with "ask" prompts for approval**: When the working directory is outside the project and `permission.external_directory` is set to "ask", you will be prompted to approve or deny access.
 
 #### Example: Allow specific commands for PTY
 

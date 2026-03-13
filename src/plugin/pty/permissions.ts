@@ -1,3 +1,4 @@
+import type { ToolContext } from '@opencode-ai/plugin'
 import type { PluginClient } from '../types.ts'
 import { allStructured } from './wildcard.ts'
 
@@ -49,15 +50,24 @@ async function denyWithToast(msg: string, details?: string): Promise<never> {
   throw new Error(details ? `${msg} ${details}` : msg)
 }
 
-async function handleAskPermission(commandLine: string): Promise<never> {
-  await denyWithToast(
-    `PTY: Command "${commandLine}" requires permission (treated as denied)`,
-    `PTY spawn denied: Command "${commandLine}" requires user permission which is not supported by this plugin. Configure explicit "allow" or "deny" in your opencode.json permission.bash settings.`
-  )
-  throw new Error('Unreachable') // For TS, should never hit.
+function formatCommandLine(command: string, args: string[]): string {
+  return args.length > 0 ? `${command} ${args.join(' ')}` : command
 }
 
-export async function checkCommandPermission(command: string, args: string[]): Promise<void> {
+async function askPermission(ctx: ToolContext, command: string, args: string[]): Promise<void> {
+  await ctx.ask({
+    permission: 'bash',
+    patterns: [formatCommandLine(command, args)],
+    always: [command, `${command} *`],
+    metadata: { command, args },
+  })
+}
+
+export async function checkCommandPermission(
+  command: string,
+  args: string[],
+  ctx: ToolContext
+): Promise<void> {
   const config = await getPermissionConfig()
   const bashPerms = config.bash
 
@@ -70,7 +80,7 @@ export async function checkCommandPermission(command: string, args: string[]): P
       await denyWithToast('PTY spawn denied: All bash commands are disabled by user configuration.')
     }
     if (bashPerms === 'ask') {
-      await handleAskPermission(command)
+      await askPermission(ctx, command, args)
     }
     return
   }
@@ -79,16 +89,16 @@ export async function checkCommandPermission(command: string, args: string[]): P
 
   if (action === 'deny') {
     await denyWithToast(
-      `PTY spawn denied: Command "${command} ${args.join(' ')}" is explicitly denied by user configuration.`
+      `PTY spawn denied: Command "${formatCommandLine(command, args)}" is explicitly denied by user configuration.`
     )
   }
 
   if (action === 'ask') {
-    await handleAskPermission(`${command} ${args.join(' ')}`)
+    await askPermission(ctx, command, args)
   }
 }
 
-export async function checkWorkdirPermission(workdir: string): Promise<void> {
+export async function checkWorkdirPermission(workdir: string, ctx: ToolContext): Promise<void> {
   if (!_directory) {
     return
   }
@@ -110,6 +120,11 @@ export async function checkWorkdirPermission(workdir: string): Promise<void> {
   }
 
   if (extDirPerm === 'ask') {
-    // TODO: Implement user prompt for external directory access
+    await ctx.ask({
+      permission: 'external_directory',
+      patterns: [workdir],
+      always: [workdir, `${workdir}/*`],
+      metadata: { workdir },
+    })
   }
 }
