@@ -88,6 +88,6 @@ jobs:
       - name: Quality checks (format)
         run: devenv shell -- bun format
       - name: Install Playwright Browsers (Devenv shell)
-        run: devenv shell -- bash -lc 'PLAYWRIGHT_BROWSERS_PATH=0 bunx playwright install chromium firefox'
+        run: devenv shell -- bash -lc 'PLAYWRIGHT_BROWSERS_PATH=0 bunx playwright install --with-deps chromium firefox'
       - name: Quality checks (test:e2e)
         run: devenv shell -- bash -lc 'PLAYWRIGHT_BROWSERS_PATH=0 bun test:e2e'
