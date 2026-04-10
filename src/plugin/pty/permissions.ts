@@ -61,7 +61,8 @@ function formatCommandLine(command: string, args: string[]): string {
  */
 export async function checkCommandPermissions(
   commands: Array<{ command: string; args: string[] }>,
-  ctx: ToolContext
+  ctx: ToolContext,
+  script?: string
 ): Promise<void> {
   if (commands.length === 0) return
   const config = await getPermissionConfig()
@@ -103,7 +104,7 @@ export async function checkCommandPermissions(
     permission: 'bash',
     patterns: toAsk,
     always: Array.from(always),
-    metadata: {},
+    metadata: { script },
   })
 }
 

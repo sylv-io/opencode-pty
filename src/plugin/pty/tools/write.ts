@@ -69,7 +69,7 @@ export const ptyWrite = tool({
       .filter(({ command }) => Boolean(command))
 
     // Single batched permission check (one config fetch, one ctx.ask())
-    await checkCommandPermissions(parsed, ctx)
+    await checkCommandPermissions(parsed, ctx, parsedData)
 
     const success = manager.write(args.id, parsedData)
     if (!success) {
