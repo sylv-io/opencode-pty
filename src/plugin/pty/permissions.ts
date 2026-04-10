@@ -1,3 +1,4 @@
+import type { ToolContext } from '@opencode-ai/plugin'
 import type { PluginClient } from '../types.ts'
 import { allStructured } from './wildcard.ts'
 
@@ -49,46 +50,73 @@ async function denyWithToast(msg: string, details?: string): Promise<never> {
   throw new Error(details ? `${msg} ${details}` : msg)
 }
 
-async function handleAskPermission(commandLine: string): Promise<never> {
-  await denyWithToast(
-    `PTY: Command "${commandLine}" requires permission (treated as denied)`,
-    `PTY spawn denied: Command "${commandLine}" requires user permission which is not supported by this plugin. Configure explicit "allow" or "deny" in your opencode.json permission.bash settings.`
-  )
-  throw new Error('Unreachable') // For TS, should never hit.
+function formatCommandLine(command: string, args: string[]): string {
+  return args.length > 0 ? `${command} ${args.join(' ')}` : command
 }
 
-export async function checkCommandPermission(command: string, args: string[]): Promise<void> {
+/**
+ * Check permissions for multiple commands in a single batch.
+ * Fetches config once, evaluates each command against rules, and fires
+ * at most one ctx.ask() for all commands that require user approval.
+ */
+export async function checkCommandPermissions(
+  commands: Array<{ command: string; args: string[] }>,
+  ctx: ToolContext
+): Promise<void> {
+  if (commands.length === 0) return
   const config = await getPermissionConfig()
   const bashPerms = config.bash
 
-  if (!bashPerms) {
-    return
-  }
+  if (!bashPerms) return
 
-  if (typeof bashPerms === 'string') {
-    if (bashPerms === 'deny') {
-      await denyWithToast('PTY spawn denied: All bash commands are disabled by user configuration.')
+  const toAsk: string[] = []
+  const always = new Set<string>()
+
+  for (const { command, args } of commands) {
+    const line = formatCommandLine(command, args)
+
+    if (typeof bashPerms === 'string') {
+      if (bashPerms === 'deny') {
+        await denyWithToast('PTY denied: All bash commands are disabled by user configuration.')
+      }
+      if (bashPerms === 'ask') {
+        toAsk.push(line)
+        always.add(`${command} *`)
+      }
+      continue
     }
-    if (bashPerms === 'ask') {
-      await handleAskPermission(command)
+
+    const action = allStructured({ head: command, tail: args }, bashPerms)
+    if (action === 'deny') {
+      await denyWithToast(
+        `PTY denied: Command "${line}" is explicitly denied by user configuration.`
+      )
     }
-    return
+    if (action === 'ask') {
+      toAsk.push(line)
+      always.add(`${command} *`)
+    }
   }
 
-  const action = allStructured({ head: command, tail: args }, bashPerms)
-
-  if (action === 'deny') {
-    await denyWithToast(
-      `PTY spawn denied: Command "${command} ${args.join(' ')}" is explicitly denied by user configuration.`
-    )
-  }
-
-  if (action === 'ask') {
-    await handleAskPermission(`${command} ${args.join(' ')}`)
-  }
+  if (toAsk.length === 0) return
+  await ctx.ask({
+    permission: 'bash',
+    patterns: toAsk,
+    always: Array.from(always),
+    metadata: {},
+  })
 }
 
-export async function checkWorkdirPermission(workdir: string): Promise<void> {
+/** Single-command convenience wrapper (used by pty_spawn). */
+export async function checkCommandPermission(
+  command: string,
+  args: string[],
+  ctx: ToolContext
+): Promise<void> {
+  await checkCommandPermissions([{ command, args }], ctx)
+}
+
+export async function checkWorkdirPermission(workdir: string, ctx: ToolContext): Promise<void> {
   if (!_directory) {
     return
   }
@@ -110,6 +138,11 @@ export async function checkWorkdirPermission(workdir: string): Promise<void> {
   }
 
   if (extDirPerm === 'ask') {
-    // TODO: Implement user prompt for external directory access
+    await ctx.ask({
+      permission: 'external_directory',
+      patterns: [workdir],
+      always: [`${workdir}/*`],
+      metadata: { workdir },
+    })
   }
 }

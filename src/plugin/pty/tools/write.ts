@@ -1,6 +1,7 @@
 import { tool } from '@opencode-ai/plugin'
 import { manager } from '../manager.ts'
-import { checkCommandPermission } from '../permissions.ts'
+import { extractCommandNodes } from '../parser.ts'
+import { checkCommandPermissions } from '../permissions.ts'
 import { buildSessionNotFoundError } from '../utils.ts'
 import DESCRIPTION from './write.txt'
 
@@ -34,18 +35,6 @@ function parseEscapeSequences(input: string): string {
   })
 }
 
-function extractCommands(data: string): string[] {
-  const commands: string[] = []
-  const lines = data.split(/[\n\r]+/)
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (trimmed && !trimmed.startsWith(ETX) && !trimmed.startsWith(EOT)) {
-      commands.push(trimmed)
-    }
-  }
-  return commands
-}
-
 function parseCommand(commandLine: string): { command: string; args: string[] } {
   const parts = commandLine.split(/\s+/).filter(Boolean)
   const command = parts[0] ?? ''
@@ -59,7 +48,7 @@ export const ptyWrite = tool({
     id: tool.schema.string().describe('The PTY session ID (e.g., pty_a1b2c3d4)'),
     data: tool.schema.string().describe('The input data to send to the PTY'),
   },
-  async execute(args) {
+  async execute(args, ctx) {
     const session = manager.get(args.id)
     if (!session) {
       throw buildSessionNotFoundError(args.id)
@@ -72,13 +61,15 @@ export const ptyWrite = tool({
     // Parse escape sequences to actual bytes
     const parsedData = parseEscapeSequences(args.data)
 
-    const commands = extractCommands(parsedData)
-    for (const commandLine of commands) {
-      const { command, args: cmdArgs } = parseCommand(commandLine)
-      if (command) {
-        await checkCommandPermission(command, cmdArgs)
-      }
-    }
+    // Use tree-sitter to extract only actual executable commands,
+    // skipping variable assignments, declarations, loop structure, etc.
+    const commandTexts = await extractCommandNodes(parsedData)
+    const parsed = commandTexts
+      .map(parseCommand)
+      .filter(({ command }) => Boolean(command))
+
+    // Single batched permission check (one config fetch, one ctx.ask())
+    await checkCommandPermissions(parsed, ctx)
 
     const success = manager.write(args.id, parsedData)
     if (!success) {
